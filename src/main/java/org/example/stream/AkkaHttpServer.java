@@ -2,11 +2,6 @@ package org.example.stream;
 
 import akka.actor.ActorSystem;
 import akka.http.javadsl.Http;
-import akka.http.javadsl.model.HttpRequest;
-import akka.http.javadsl.model.HttpResponse;
-import akka.http.javadsl.model.RequestEntity;
-import akka.http.javadsl.model.StatusCodes;
-import akka.japi.function.Function;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 import org.example.stream.http.HttpApp;
@@ -14,8 +9,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
 
 /**
  * Author: $USER
