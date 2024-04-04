@@ -1,6 +1,9 @@
 package org.example.stream.data.dto;
 
+import com.alibaba.fastjson.JSON;
+
 import java.io.Serializable;
+import java.math.BigDecimal;
 
 /**
  * Author: wanghao
@@ -45,6 +48,10 @@ public class ResourceInfoDTO implements Serializable {
      * 登录状态 1-登录，2-未登录
      */
     private Integer loginStatus;
+
+    private BigDecimal score;
+
+    private String userAccount;
 
     public String getName() {
         return name;
@@ -109,4 +116,34 @@ public class ResourceInfoDTO implements Serializable {
     public void setLoginStatus(Integer loginStatus) {
         this.loginStatus = loginStatus;
     }
+
+    public BigDecimal getScore() {
+        return score;
+    }
+
+    public void setScore(BigDecimal score) {
+        this.score = score;
+    }
+
+    public String getUserAccount() {
+        return userAccount;
+    }
+
+    public void setUserAccount(String userAccount) {
+        this.userAccount = userAccount;
+    }
+
+    public static void main(String[] args) {
+
+        ResourceInfoDTO dto = new ResourceInfoDTO();
+
+        dto.setResourceId(111111112232132L);
+        dto.setDeviceId("asdasdsadadsada");
+        dto.setUserId(1123L);
+        dto.setAct(1);
+
+        System.out.println(JSON.toJSONString(dto));
+
+    }
+
 }

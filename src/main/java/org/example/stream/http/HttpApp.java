@@ -6,22 +6,25 @@ import akka.http.javadsl.model.HttpRequest;
 import akka.http.javadsl.model.RequestEntity;
 import akka.http.javadsl.model.StatusCodes;
 import akka.http.javadsl.server.Route;
+import akka.japi.Pair;
 import akka.japi.function.Function;
+import akka.japi.tuple.Tuple3;
 import akka.stream.*;
 import akka.stream.javadsl.*;
 import akka.util.ByteString;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import org.example.stream.data.dto.ResourceInfoDTO;
+import org.example.stream.redis.IRedisService;
+import org.example.stream.redis.impl.RedisServiceImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.math.BigDecimal;
 import java.net.InetAddress;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.CompletionStage;
 
 /**
@@ -32,6 +35,16 @@ import java.util.concurrent.CompletionStage;
 public class HttpApp extends BasicRoute {
 
     private static final Logger logger = LoggerFactory.getLogger(HttpApp.class);
+
+    private static Map<Integer, BigDecimal> act2Score = new HashMap<>();
+
+    private final IRedisService redisService = new RedisServiceImpl();
+
+    static {
+        act2Score.put(1,new BigDecimal("0.5"));
+        act2Score.put(2,new BigDecimal("0.3"));
+        act2Score.put(3,new BigDecimal("-0.5"));
+    }
 
     public Route createRoute() {
         return extractRequest(request ->
@@ -44,7 +57,8 @@ public class HttpApp extends BasicRoute {
                             }
                             return concat(
                                     kPath(request, materializer, ip),
-                                    testPath(request, materializer)
+                                    testPath(request, materializer),
+                                    test2Path(request, materializer)
                             ).orElse(complete(StatusCodes.get(404)));
                         })));
     }
@@ -96,6 +110,26 @@ public class HttpApp extends BasicRoute {
         );
     }
 
+    public Route test2Path(HttpRequest request, Materializer materializer) {
+        return path("test2", () ->
+                post(() -> {
+                    RequestEntity entity = request.entity();
+                    RunnableGraph<CompletionStage<Object>> streamGraph = createTestStreamGraphV2(entity);
+                    CompletionStage<Object> run = streamGraph.run(materializer);
+                    run.thenAccept(result -> {
+                        Long count = redisService.zcard("sss");
+                        // 在这里处理您的结果
+                        logger.info("Result:{},{}",result,count);
+                    }).exceptionally(ex -> {
+                        // 处理异常情况
+                        ex.printStackTrace();
+                        return null;
+                    });
+                    return complete(StatusCodes.get(204));
+                })
+        );
+    }
+
     private RunnableGraph<CompletionStage<Done>> createStreamGraph(RequestEntity requestEntity, String ip) {
         return parseRequestEntity(requestEntity)
                 .toMat(Sink.ignore(), Keep.right());
@@ -107,9 +141,9 @@ public class HttpApp extends BasicRoute {
     }
 
     private RunnableGraph<CompletionStage<Object>> createTestStreamGraphV2(RequestEntity requestEntity) {
-        Source<ByteString, Object> dataBytes = requestEntity.getDataBytes();
+        Source<ByteString, Object> originalSource = requestEntity.getDataBytes();
 
-        Flow.of(ByteString.class)
+        Flow<ByteString, ResourceInfoDTO, NotUsed> flow = Flow.of(ByteString.class)
                 .map((Function<ByteString, ResourceInfoDTO>) param -> {
                     String str = param.utf8String();
                     logger.info("receive data:{}", str);
@@ -119,14 +153,18 @@ public class HttpApp extends BasicRoute {
                     //用户行为过滤：收听，订阅，取消订阅
                     Integer act = jsonObject.getInteger("act");
                     if (act == 1 || act == 2 || act == 3) {
+                        //padding 用户行为得分
+                        dto.setScore(act2Score.get(act));
                         //padding 判断用户是否登录
                         Long userId = jsonObject.getLong("userId");
                         if (userId != null && userId > 0) {
                             //已登录
                             dto.setLoginStatus(1);
+                            dto.setUserAccount(userId.toString());
                         } else {
                             //未登录
                             dto.setLoginStatus(2);
+                            dto.setUserAccount(jsonObject.getString("deviceId"));
                         }
                         //padding 判断处于哪个时间段
                         dto.setStage(getStageByNow());
@@ -136,7 +174,21 @@ public class HttpApp extends BasicRoute {
                     }
                 })
                 .filter(Objects::nonNull);
-        return null;
+
+        Source<ResourceInfoDTO, Object> source = originalSource.via(flow);
+
+        Sink<Object, CompletionStage<Object>> sink = Sink.head();
+
+        RunnableGraph<CompletionStage<Object>> runnableGraph = RunnableGraph.fromGraph(GraphDSL.create(sink, (builder, out) -> {
+
+            Outlet<ResourceInfoDTO> outlet = builder.add(source).out();
+
+            builder.from(outlet)
+                    .to(out);
+            return ClosedShape.getInstance();
+        }));
+
+        return runnableGraph;
     }
 
     private Integer getStageByNow() {
