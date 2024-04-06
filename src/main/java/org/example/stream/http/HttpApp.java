@@ -81,7 +81,7 @@ public class HttpApp extends BasicRoute {
 
                     } else {
                         createStreamGraph(requestEntity, ip).run(materializer);
-                        createAnotherStreamGraph(requestEntity);
+                        createAnotherStreamGraph(requestEntity).run(materializer);
                     }
 
                     return complete(StatusCodes.get(204));
